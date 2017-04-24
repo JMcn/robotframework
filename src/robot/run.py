@@ -42,6 +42,9 @@ from robot.output import LOGGER, pyloggingconf
 from robot.reporting import ResultWriter
 from robot.running import TestSuiteBuilder
 from robot.utils import Application, unic
+reload(sys)
+sys.setdefaultencoding('UTF-8')
+from xml.dom import minidom
 
 
 USAGE = """Robot Framework -- A generic test automation framework
@@ -86,7 +89,7 @@ For more information about the framework see http://robotframework.org/.
 
 Options
 =======
-
+ -X --retry retry         set the retry count for the testcase
  -N --name name           Set the name of the top level test suite. Underscores
                           in the name are converted to spaces. Default name is
                           created from the name of the executed data source.
@@ -434,6 +437,7 @@ class RobotFramework(Application):
             result = suite.run(settings)
             LOGGER.info("Tests execution ended. Statistics:\n%s"
                         % result.suite.stat_message)
+            self.make(settings.output)
             if settings.log or settings.report or settings.xunit:
                 writer = ResultWriter(settings.output if settings.log
                                       else result)
@@ -447,6 +451,34 @@ class RobotFramework(Application):
         return dict((name, value) for name, value in options.items()
                     if value not in (None, []))
 
+    def make(self, outxml):
+        xmldoc = minidom.parse(outxml)
+        suiteElementList = xmldoc.getElementsByTagName('suite')
+        mySuite = []
+        for suiteElement in suiteElementList:
+            if suiteElement.childNodes is not None:
+                for element in suiteElement.childNodes:
+                    if element.nodeName == 'test':
+                        mySuite.append(suiteElement)
+                        break
+        for suite in mySuite:
+            testElements = {}
+            for element in suite.childNodes:
+                if element.nodeName == 'test':
+                    name = element.getAttribute('name')
+                    if testElements.get(name) == None:
+                        testElements.update({name: [element]})
+                    else:
+                        testElements.get(name).append(element)
+            for n, el in testElements.iteritems():
+                for i in el[0:-1]:
+                    textElement = i.nextSibling
+                    suite.removeChild(i)
+                    suite.removeChild(textElement)
+        savefile = open(outxml, 'w')
+        root = xmldoc.documentElement
+        root.writexml(savefile)
+        savefile.close()
 
 def run_cli(arguments):
     """Command line execution entry point for running tests.
